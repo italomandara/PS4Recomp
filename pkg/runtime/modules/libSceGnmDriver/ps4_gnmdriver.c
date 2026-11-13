@@ -165,11 +165,17 @@ void ps4_gnmdriver_init(GuestContext *ctx) {
 
     if (g_tessellation_ring_addr == 0 && ctx) {
         GuestContext *proc = ctx->process_ctx ? ctx->process_ctx : ctx;
-        g_tessellation_ring_addr = recomp_vm_alloc_named_aligned(
-            proc, GNM_TESSELLATION_RING_SIZE, 0x10000, PROT_READ | PROT_WRITE, 0, "gnm_tess_ring"
+        uint64_t ring_addr = recomp_vm_alloc_named_aligned(
+            proc, GNM_TESSELLATION_RING_SIZE, 0x10000, PROT_NONE, 0, "reserved"
         );
-        printf("[ps4-gnm] Allocated tessellation factor ring buffer at guest VAddr 0x%llx (size: %u MB)\n",
-               (unsigned long long)g_tessellation_ring_addr, GNM_TESSELLATION_RING_SIZE / (1024 * 1024));
+        if (ring_addr == 0 || ring_addr == (uint64_t)-1) {
+            fprintf(stderr, "[ps4-gnm] ERROR: failed to reserve tessellation factor ring buffer (%u MB)\n",
+                    GNM_TESSELLATION_RING_SIZE / (1024 * 1024));
+        } else {
+            g_tessellation_ring_addr = ring_addr;
+            printf("[ps4-gnm] Reserved tessellation factor ring buffer at guest VAddr 0x%llx (size: %u MB)\n",
+                   (unsigned long long)g_tessellation_ring_addr, GNM_TESSELLATION_RING_SIZE / (1024 * 1024));
+        }
     }
     pthread_mutex_unlock(&g_gnm_mutex);
 }

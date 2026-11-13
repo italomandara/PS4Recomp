@@ -416,14 +416,17 @@ int sceKernelMapDirectMemory(GuestContext *ctx, void **addrInOut, size_t length,
     }
 
     uint64_t vaddr = (uint64_t)-1;
-    // Check if fixed address was requested
+    // A non-NULL address is a fixed mapping request; do not silently relocate it.
     if (*addrInOut != NULL) {
         uint64_t req_vaddr = (uint64_t)*addrInOut;
         vaddr = recomp_vm_alloc_fixed(ctx, req_vaddr, aligned_len, prot, flags, "direct_mem");
-    }
-
-    // If no fixed address requested or fixed mapping failed, allocate dynamically with alignment
-    if (vaddr == (uint64_t)-1) {
+        if (vaddr == (uint64_t)-1) {
+            fprintf(stderr, "[ps4-mem] ERROR: sceKernelMapDirectMemory could not map requested address %p (len=%zu)\n",
+                    *addrInOut, aligned_len);
+            pthread_mutex_unlock(&g_direct_mutex);
+            return 0x8002000c; // ORBIS_KERNEL_ERROR_ENOMEM
+        }
+    } else {
         vaddr = recomp_vm_alloc_named_aligned(ctx, aligned_len, alignment, prot, flags, "direct_mem");
     }
 

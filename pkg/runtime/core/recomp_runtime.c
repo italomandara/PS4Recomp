@@ -1301,6 +1301,9 @@ uint64_t recomp_vm_alloc_fixed(GuestContext *ctx, uint64_t desired_addr,
     return (uint64_t)-1;
   }
 
+  const bool preserve_reservation =
+      !curr->is_free && curr->name[0] && strstr(curr->name, "reserved");
+
   // Split leading part if desired_addr > curr->addr
   if (aligned_addr > curr->addr) {
     GuestVMExtent *prefix = (GuestVMExtent *)calloc(1, sizeof(GuestVMExtent));
@@ -1310,7 +1313,12 @@ uint64_t recomp_vm_alloc_fixed(GuestContext *ctx, uint64_t desired_addr,
     }
     prefix->addr = curr->addr;
     prefix->size = aligned_addr - curr->addr;
-    prefix->is_free = true;
+    prefix->is_free = !preserve_reservation;
+    if (preserve_reservation) {
+      prefix->prot = curr->prot;
+      prefix->flags = curr->flags;
+      memcpy(prefix->name, curr->name, sizeof(prefix->name));
+    }
     prefix->prev = curr->prev;
     prefix->next = curr;
     if (curr->prev) {
@@ -1326,18 +1334,25 @@ uint64_t recomp_vm_alloc_fixed(GuestContext *ctx, uint64_t desired_addr,
   // Split trailing part if curr->size > aligned_size
   if (curr->size > aligned_size) {
     GuestVMExtent *suffix = (GuestVMExtent *)calloc(1, sizeof(GuestVMExtent));
-    if (suffix) {
-      suffix->addr = curr->addr + aligned_size;
-      suffix->size = curr->size - aligned_size;
-      suffix->is_free = true;
-      suffix->prev = curr;
-      suffix->next = curr->next;
-      if (curr->next) {
-        curr->next->prev = suffix;
-      }
-      curr->next = suffix;
-      curr->size = aligned_size;
+    if (!suffix) {
+      pthread_mutex_unlock(&proc->vm_mutex);
+      return (uint64_t)-1;
     }
+    suffix->addr = curr->addr + aligned_size;
+    suffix->size = curr->size - aligned_size;
+    suffix->is_free = !preserve_reservation;
+    if (preserve_reservation) {
+      suffix->prot = curr->prot;
+      suffix->flags = curr->flags;
+      memcpy(suffix->name, curr->name, sizeof(suffix->name));
+    }
+    suffix->prev = curr;
+    suffix->next = curr->next;
+    if (curr->next) {
+      curr->next->prev = suffix;
+    }
+    curr->next = suffix;
+    curr->size = aligned_size;
   }
 
   curr->is_free = false;
